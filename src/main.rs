@@ -15,7 +15,7 @@ fn main() {
     let host = host_from_id(HostId::Jack).unwrap();
     let device = host.default_output_device().unwrap();
     let mut wrapper = GlicolWrapper::new();
-    wrapper.eval(r#"o: sin 440"#);
+    wrapper.eval(r#"o: sin 220"#);
     /*
     wrapper.eval(r#"
         ~gate: speed 2.0
