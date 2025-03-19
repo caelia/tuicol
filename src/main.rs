@@ -15,7 +15,8 @@ use std::sync::{Arc, Mutex};
 fn main() {
     let host = host_from_id(HostId::Jack).unwrap();
     let device = host.default_output_device().unwrap();
-    let mut wrapper_ptr = Arc::new(Mutex::new(GlicolWrapper::new()));
+    let (_stream, handle) = OutputStream::try_from_device(&device).unwrap();
+    let wrapper_ptr: &'static Arc<Mutex<GlicolWrapper>> = Arc::new(Mutex::new(GlicolWrapper::new()));
     /*
     wrapper.eval(r#"
         ~gate: speed 2.0
@@ -35,26 +36,28 @@ fn main() {
         ~drum: speed 4.0 >> seq 60 >> sp \808bd;
         "#);
         */
-    let (_stream, handle) = OutputStream::try_from_device(&device).unwrap();
     // let (_stream, handle) = OutputStream::try_default().unwrap();
+    /*
     if let Some(wrapper_mtx) = Arc::get_mut(&mut wrapper_ptr) {
-        let mut wrapper = wrapper_mtx.lock().unwrap();
+        let wrapper = wrapper_mtx.get_mut().unwrap();
+        let _ = handle.play_raw(wrapper);
+    }
+    if let Some(wrapper_mtx) = Arc::get_mut(&mut wrapper_ptr) {
+        let wrapper = wrapper_mtx.get_mut().unwrap();
         wrapper.eval(r#"o: sin 440"#);
-        let _ = handle.play_raw(wrapper);
         thread::sleep(Duration::from_millis(1500));
     }
     if let Some(wrapper_mtx) = Arc::get_mut(&mut wrapper_ptr) {
-        let mut wrapper = wrapper_mtx.lock().unwrap();
+        let wrapper = wrapper_mtx.get_mut().unwrap();
         wrapper.eval(r#""#);
-        let _ = handle.play_raw(wrapper);
         thread::sleep(Duration::from_millis(1500));
     }
     if let Some(wrapper_mtx) = Arc::get_mut(&mut wrapper_ptr) {
-        let mut wrapper = wrapper_mtx.lock().unwrap();
+        let wrapper = wrapper_mtx.get_mut().unwrap();
         wrapper.eval(r#"o: saw 220"#);
-        let _ = handle.play_raw(wrapper);
         thread::sleep(Duration::from_millis(1500));
     }
+    */
     /*
     wrapper.eval("");
     thread::sleep(Duration::from_millis(1500));
