@@ -9,13 +9,13 @@ use cpal::traits::HostTrait;
 use rodio::OutputStream;
 use std::time::Duration;
 use std::thread;
+use std::sync::{Arc, Mutex};
 // use std::Iter;
 
 fn main() {
     let host = host_from_id(HostId::Jack).unwrap();
     let device = host.default_output_device().unwrap();
-    let mut wrapper = GlicolWrapper::new();
-    wrapper.eval(r#"o: sin 220"#);
+    let mut wrapper_ptr = Arc::new(Mutex::new(GlicolWrapper::new()));
     /*
     wrapper.eval(r#"
         ~gate: speed 2.0
@@ -37,8 +37,24 @@ fn main() {
         */
     let (_stream, handle) = OutputStream::try_from_device(&device).unwrap();
     // let (_stream, handle) = OutputStream::try_default().unwrap();
-    let _ = handle.play_raw(wrapper);
-    thread::sleep(Duration::from_millis(1500));
+    if let Some(wrapper_mtx) = Arc::get_mut(&mut wrapper_ptr) {
+        let mut wrapper = wrapper_mtx.lock().unwrap();
+        wrapper.eval(r#"o: sin 440"#);
+        let _ = handle.play_raw(wrapper);
+        thread::sleep(Duration::from_millis(1500));
+    }
+    if let Some(wrapper_mtx) = Arc::get_mut(&mut wrapper_ptr) {
+        let mut wrapper = wrapper_mtx.lock().unwrap();
+        wrapper.eval(r#""#);
+        let _ = handle.play_raw(wrapper);
+        thread::sleep(Duration::from_millis(1500));
+    }
+    if let Some(wrapper_mtx) = Arc::get_mut(&mut wrapper_ptr) {
+        let mut wrapper = wrapper_mtx.lock().unwrap();
+        wrapper.eval(r#"o: saw 220"#);
+        let _ = handle.play_raw(wrapper);
+        thread::sleep(Duration::from_millis(1500));
+    }
     /*
     wrapper.eval("");
     thread::sleep(Duration::from_millis(1500));
