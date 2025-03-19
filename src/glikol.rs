@@ -6,7 +6,8 @@ use std::io::BufReader;
 use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::time::Duration;
-use std::sync::{Arc, Mutex};
+// use std::sync::{Arc, Mutex};
+use std::borrow::BorrowMut;
 // use std::cell::{RefCell, RefMut};
 
 enum Channel {
@@ -29,7 +30,7 @@ pub enum Message {
 }
 
 pub struct GlicolWrapper {
-    engine: Arc<Mutex<glicol::Engine<32>>>,
+    engine: glicol::Engine<32>,
     channel: Channel,
     data_l: VecDeque<f32>,
     data_r: VecDeque<f32>
@@ -38,7 +39,7 @@ pub struct GlicolWrapper {
 impl GlicolWrapper {
     pub fn new() -> Self {
         GlicolWrapper {
-            engine: Arc::new(Mutex::new(Engine::<32>::new())),
+            engine: Engine::<32>::new(),
             channel: Channel::L,
             data_l: VecDeque::new(),
             data_r: VecDeque::new()
@@ -46,26 +47,19 @@ impl GlicolWrapper {
     }
 
     pub fn eval(&mut self, code: &str) {
-        // self.engine.update_with_code(code);
-        if let Some(eng_mtx) = Arc::get_mut(&mut self.engine) {
-            let eng = eng_mtx.get_mut().unwrap();
-            eng.update_with_code(code);
-        }
+        let eng = self.engine.borrow_mut();
+        eng.update_with_code(code);
     }
 
     fn update(&mut self) -> bool {
-        if let Some(eng_mtx) = Arc::get_mut(&mut self.engine) {
-            let eng = eng_mtx.get_mut().unwrap();
-            let (bufs, _mystery_data) = eng.next_block(vec![]);
-            if bufs[0].is_empty() || bufs[1].is_empty() {
-                false
-            } else {
-                self.data_l = VecDeque::from(bufs[0].to_vec());
-                self.data_r = VecDeque::from(bufs[1].to_vec());
-                true
-            }
-        } else {
+        let eng = self.engine.borrow_mut();
+        let (bufs, _mystery_data) = eng.next_block(vec![]);
+        if bufs[0].is_empty() || bufs[1].is_empty() {
             false
+        } else {
+            self.data_l = VecDeque::from(bufs[0].to_vec());
+            self.data_r = VecDeque::from(bufs[1].to_vec());
+            true
         }
     }
 }
