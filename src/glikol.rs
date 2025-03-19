@@ -14,6 +14,20 @@ enum Channel {
     R
 }
 
+pub enum State {
+    Stopped,
+    Paused,
+    Running
+}
+
+pub enum Message {
+    Stop,
+    Start,
+    Pause,
+    Resume,
+    Process(&'static str)
+}
+
 pub struct GlicolWrapper {
     engine: Arc<Mutex<glicol::Engine<32>>>,
     channel: Channel,
