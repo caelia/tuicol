@@ -9,6 +9,11 @@ use std::time::Duration;
 use std::sync::{Arc, Mutex};
 // use std::cell::{RefCell, RefMut};
 
+pub fn glicol_wrapper() -> Arc<Mutex<GlicolWrapper>> {
+    Arc::new(Mutex::new(GlicolWrapper::new()))
+}
+
+#[derive(Clone)]
 enum Channel {
     L,
     R
@@ -28,17 +33,28 @@ pub enum Message {
     Process(&'static str)
 }
 
-pub struct GlicolWrapper {
-    engine: Arc<Mutex<glicol::Engine<32>>>,
-    channel: Channel,
-    data_l: VecDeque<f32>,
-    data_r: VecDeque<f32>
+pub struct GlicolWrapper<'a> {
+    engine: &'a mut glicol::Engine<32>,
+    channel: &'a Channel,
+    data_l: &'a VecDeque<f32>,
+    data_r: &'a VecDeque<f32>
+}
+
+impl<'a> Clone for GlicolWrapper<'a> {
+    fn clone(&self) -> Self {
+        GlicolWrapper {
+            engine: &self.engine.borrow_mut(),
+            channel: &self.channel.clone(),
+            data_l: &self.data_l.clone(),
+            data_r: &self.data_r.clone()
+        }
+    }
 }
 
 impl GlicolWrapper {
     pub fn new() -> Self {
         GlicolWrapper {
-            engine: Arc::new(Mutex::new(Engine::<32>::new())),
+            engine: Engine::<32>::new(),
             channel: Channel::L,
             data_l: VecDeque::new(),
             data_r: VecDeque::new()
@@ -46,26 +62,17 @@ impl GlicolWrapper {
     }
 
     pub fn eval(&mut self, code: &str) {
-        // self.engine.update_with_code(code);
-        if let Some(eng_mtx) = Arc::get_mut(&mut self.engine) {
-            let eng = eng_mtx.get_mut().unwrap();
-            eng.update_with_code(code);
-        }
+        self.engine.update_with_code(code);
     }
 
     fn update(&mut self) -> bool {
-        if let Some(eng_mtx) = Arc::get_mut(&mut self.engine) {
-            let eng = eng_mtx.get_mut().unwrap();
-            let (bufs, _mystery_data) = eng.next_block(vec![]);
-            if bufs[0].is_empty() || bufs[1].is_empty() {
-                false
-            } else {
-                self.data_l = VecDeque::from(bufs[0].to_vec());
-                self.data_r = VecDeque::from(bufs[1].to_vec());
-                true
-            }
-        } else {
+        let (bufs, _mystery_data) = self.engine.next_block(vec![]);
+        if bufs[0].is_empty() || bufs[1].is_empty() {
             false
+        } else {
+            self.data_l = VecDeque::from(bufs[0].to_vec());
+            self.data_r = VecDeque::from(bufs[1].to_vec());
+            true
         }
     }
 }
