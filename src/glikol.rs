@@ -2,16 +2,12 @@
 
 use glicol::Engine;
 use rodio::Source;
-use std::io::BufReader;
 use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{SyncSender, Receiver};
 // use std::cell::{RefCell, RefMut};
-
-pub fn glicol_wrapper() -> Arc<Mutex<GlicolWrapper>> {
-    Arc::new(Mutex::new(GlicolWrapper::new()))
-}
 
 #[derive(Clone)]
 enum Channel {
@@ -25,7 +21,8 @@ pub enum State {
     Running
 }
 
-pub enum Message {
+pub enum Req {
+    NextBlock,
     Stop,
     Start,
     Pause,
@@ -33,51 +30,96 @@ pub enum Message {
     Process(&'static str)
 }
 
-pub struct GlicolWrapper<'a> {
-    engine: &'a mut glicol::Engine<32>,
-    channel: &'a Channel,
-    data_l: &'a VecDeque<f32>,
-    data_r: &'a VecDeque<f32>
+pub enum Rsp {
+    Data((VecDeque<f32>, VecDeque<f32>)),
+    NoData,
+    Ok,
+    Error    
 }
 
-impl<'a> Clone for GlicolWrapper<'a> {
-    fn clone(&self) -> Self {
-        GlicolWrapper {
-            engine: &self.engine.borrow_mut(),
-            channel: &self.channel.clone(),
-            data_l: &self.data_l.clone(),
-            data_r: &self.data_r.clone()
-        }
-    }
+pub struct GlicolWrapper {
+    engine: glicol::Engine<32>,
+    rx: Receiver<Req>,
+    tx: SyncSender<Rsp>,
 }
 
 impl GlicolWrapper {
-    pub fn new() -> Self {
+    pub fn new(rx: Receiver<Req>, tx: SyncSender<Rsp>) -> Self {
         GlicolWrapper {
             engine: Engine::<32>::new(),
-            channel: Channel::L,
-            data_l: VecDeque::new(),
-            data_r: VecDeque::new()
+            rx,
+            tx
         }
     }
 
-    pub fn eval(&mut self, code: &str) {
+    fn eval(&mut self, code: &str) {
         self.engine.update_with_code(code);
     }
 
-    fn update(&mut self) -> bool {
+    fn update(&mut self) -> Option<(VecDeque<f32>, VecDeque<f32>)> {
         let (bufs, _mystery_data) = self.engine.next_block(vec![]);
         if bufs[0].is_empty() || bufs[1].is_empty() {
-            false
+            None
         } else {
-            self.data_l = VecDeque::from(bufs[0].to_vec());
-            self.data_r = VecDeque::from(bufs[1].to_vec());
-            true
+            Some((VecDeque::from(bufs[0].to_vec()),
+                  VecDeque::from(bufs[1].to_vec())))
+        }
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            let msg = self.rx.recv();
+            match msg {
+                Ok(req) => {
+                    match req {
+                        Req::NextBlock => {
+                            match self.update() {
+                                Some(data) => { let _ = self.tx.send(Rsp::Data(data)); },
+                                None => { let _ = self.tx.send(Rsp::NoData); }
+                            }
+                        },
+                        Req::Process(code) => {
+                            self.eval(code);
+                            let _ = self.tx.send(Rsp::Ok);
+                        },
+                        Req::Stop => {
+                            let _ = self.tx.send(Rsp::Ok);
+                            break;
+                        },
+                        Req::Start | Req::Pause | Req::Resume => {
+                            let _ = self.tx.send(Rsp::Ok);
+                        }
+                    }
+                },
+                _ => {
+                    let _ = self.tx.send(Rsp::Error);
+                    break;
+                }
+            }
         }
     }
 }
 
-impl Iterator for GlicolWrapper {
+pub struct GlicolAudioSource {
+    channel: Channel,
+    data_l: VecDeque<f32>,
+    data_r: VecDeque<f32>,
+    rx: Receiver<Rsp>,
+    tx: SyncSender<Req>
+}
+
+impl GlicolAudioSource {
+    pub fn new(rx: Receiver<Rsp>, tx: SyncSender<Req>) -> Self {
+        GlicolAudioSource {
+            channel: Channel::L,
+            data_l: VecDeque::new(),
+            data_r: VecDeque::new(),
+            rx,
+            tx
+        }
+    }
+}
+impl Iterator for GlicolAudioSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -86,17 +128,29 @@ impl Iterator for GlicolWrapper {
                 Channel::L => self.data_l.pop_front(),
                 Channel::R => self.data_r.pop_front()
             };
-            if result_ == None {
-                if self.update() {
+            match result_ {
+                Some(sample) => Some(sample),
+                None => {
+                    let _ = self.tx.send(Req::NextBlock);
+                    let msg = self.rx.recv();
+                    match msg {
+                        Ok(rsp) => {
+                            match rsp {
+                                Rsp::Data((left, right)) => {
+                                    self.data_l = left;
+                                    self.data_r = right;
+                                },
+                                Rsp::NoData => (),
+                                _ => ()
+                            }
+                        },
+                        _ => ()
+                    }
                     match self.channel {
                         Channel::L => self.data_l.pop_front(),
                         Channel::R => self.data_r.pop_front()
                     }
-                } else {
-                    None
-                }
-            } else {
-                result_
+                } 
             }
         };
         self.channel = match self.channel {
@@ -107,7 +161,7 @@ impl Iterator for GlicolWrapper {
     }
 }
 
-impl Source for GlicolWrapper {
+impl Source for GlicolAudioSource {
     fn current_frame_len(&self) -> Option<usize> {
        let len = self.data_l.len() + self.data_r.len();     
        if len == 0 {
