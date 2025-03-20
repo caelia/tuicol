@@ -21,7 +21,6 @@ pub enum DataReq {
 pub enum CtrlReq {
     Process(&'static str),
     Stop,
-    Start,
     Pause,
     Resume
 }

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 glicol = "0.13.5"
+glicol_synth = "0.13.5"
 ratatui = "0.29.0"
 tui-textarea = "0.7.0"
 rodio = "0.20.1"

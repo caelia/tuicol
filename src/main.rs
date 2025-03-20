@@ -46,6 +46,8 @@ fn main() {
     });
     thread::sleep(Duration::from_millis(1500));
 
+    let _ = tx.send(CtrlReq::Pause);
+    thread::sleep(Duration::from_millis(1500));
     /*
     let _ = tx.send(CtrlReq::Process(r#""#));
     thread::sleep(Duration::from_millis(1500));

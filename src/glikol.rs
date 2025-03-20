@@ -4,9 +4,10 @@
 // For counting the number of iterations of next()
 // static mut COUNTER: u32 = 0;
 
-use crate::common::{Channel, DataReq, DataRsp, CtrlReq, CtrlRsp};
+use crate::common::{State, Channel, DataReq, DataRsp, CtrlReq, CtrlRsp};
 // use crate::config::Config;
 use glicol::Engine;
+use glicol_synth::Buffer;
 use rodio::Source;
 use std::collections::VecDeque;
 use std::iter::Iterator;
@@ -21,6 +22,7 @@ pub struct GlicolWrapper {
     data_tx: SyncSender<DataRsp>,
     ctrl_rx: Receiver<CtrlReq>,
     ctrl_tx: Sender<CtrlRsp>,
+    state: State
 }
 
 impl GlicolWrapper {
@@ -33,7 +35,8 @@ impl GlicolWrapper {
             data_tx,
             data_rx,
             ctrl_tx,
-            ctrl_rx
+            ctrl_rx,
+            state: State::Stopped
         }
     }
 
@@ -42,32 +45,54 @@ impl GlicolWrapper {
     }
 
     fn update(&mut self) -> Option<(VecDeque<f32>, VecDeque<f32>)> {
-        let (bufs, _mystery_data) = self.engine.next_block(vec![]);
-        if bufs[0].is_empty() || bufs[1].is_empty() {
-            None
-        } else {
-            // println!("{:?}", bufs[0]);
-            // println!("{:?}", bufs[1]);
-            Some((VecDeque::from(bufs[0].to_vec()),
-                  VecDeque::from(bufs[1].to_vec())))
+        match self.state {
+            State::Running => {
+                let (bufs, _mystery_data) = self.engine.next_block(vec![]);
+                if bufs[0].is_empty() || bufs[1].is_empty() {
+                    None
+                } else {
+                    // println!("{:?}", bufs[0]);
+                    // println!("{:?}", bufs[1]);
+                    Some((VecDeque::from(bufs[0].to_vec()),
+                          VecDeque::from(bufs[1].to_vec())))
+                }
+            },
+            State::Paused => {
+                let left: Buffer<32> = Buffer::SILENT;
+                let right: Buffer<32> = Buffer::SILENT;
+                // left.silence();
+                // right.silence();
+                Some((VecDeque::from(left.to_vec()),
+                      VecDeque::from(right.to_vec())))
+            },
+            State::Stopped => None
         }
     }
 
     pub fn run(&mut self) {
+        self.state = State::Running;
         loop {
             let ctrl_msg = self.ctrl_rx.try_recv();
             match ctrl_msg {
                 Ok(req) => {
                     match req {
                         CtrlReq::Process(code) => {
+                            // Really?
+                            self.state = State::Running;
                             self.eval(code);
                             let _ = self.data_tx.send(DataRsp::Ok);
                         },
                         CtrlReq::Stop => {
+                            self.state = State::Stopped;
                             let _ = self.ctrl_tx.send(CtrlRsp::Ok);
                             break;
                         },
-                        CtrlReq::Start | CtrlReq::Pause | CtrlReq::Resume => {
+                        CtrlReq::Pause => {
+                            self.state = State::Paused;
+                            let _ = self.ctrl_tx.send(CtrlRsp::Ok);
+                            
+                        }| CtrlReq::Resume => {
+                            self.state = State::Running;
                             let _ = self.ctrl_tx.send(CtrlRsp::Ok);
                         }
                     }
