@@ -14,7 +14,23 @@ use std::iter::Iterator;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, SyncSender, Receiver};
+use std::fs::OpenOptions;
+use std::io::Write;
 // use std::cell::{RefCell, RefMut};
+
+
+pub fn log(msg: String) {
+    let opened = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("debug.log");
+    match opened {
+        Ok(mut f) => {
+            let _ = f.write(msg.as_bytes());
+        },
+        _ => ()
+    }
+}
 
 pub struct GlicolWrapper {
     engine: glicol::Engine<32>,
@@ -78,6 +94,7 @@ impl GlicolWrapper {
                     match req {
                         CtrlReq::Process(code) => {
                             // Really?
+                            log(code.clone());
                             self.state = State::Running;
                             self.eval(code);
                             let _ = self.data_tx.send(DataRsp::Ok);

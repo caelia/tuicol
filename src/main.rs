@@ -4,7 +4,7 @@
 mod common;
 mod glikol;
 
-use glikol::{GlicolWrapper, GlicolAudioSource};
+use glikol::{GlicolWrapper, GlicolAudioSource, log};
 use common::CtrlReq;
 use cpal::{HostId, host_from_id};
 use cpal::traits::HostTrait;
@@ -80,7 +80,7 @@ fn main() -> io::Result<()> {
                 ctrl: true,
                 .. 
             } => {
-                let code = textarea.lines().join("\n");
+                let code = textarea.lines().join("");
                 let _ = tx.send(CtrlReq::Process(code));
             },
             Input {
@@ -99,6 +99,7 @@ fn main() -> io::Result<()> {
                 let _ = tx.send(CtrlReq::Pause);
             },
             input => {
+                log(format!("Input: {:?}", input));
                 let _ = textarea.input(input);
             }
         }
