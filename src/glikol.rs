@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 
 use glicol::Engine;
-use rodio::Source;
+use rodio::{Source, OutputStreamHandle};
 use std::io::BufReader;
 use std::collections::VecDeque;
 use std::iter::Iterator;
@@ -31,7 +31,7 @@ pub enum Message {
 }
 
 pub struct GlicolWrapper {
-    engine: Arc<Mutex<glicol::Engine<32>>>,
+    engine: glicol::Engine<32>,
     channel: Channel,
     data_l: VecDeque<f32>,
     data_r: VecDeque<f32>
@@ -40,7 +40,7 @@ pub struct GlicolWrapper {
 impl GlicolWrapper {
     pub fn new() -> Self {
         GlicolWrapper {
-            engine: Arc::new(Mutex::new(Engine::<32>::new())),
+            engine: Engine::<32>::new(),
             channel: Channel::L,
             data_l: VecDeque::new(),
             data_r: VecDeque::new()
@@ -48,36 +48,22 @@ impl GlicolWrapper {
     }
 
     pub fn eval(&mut self, code: &str) {
-        match Arc::get_mut(&mut self.engine) {
-            Some(eng_mtx) => {
-                match eng_mtx.get_mut() {
-                    Ok(eng) => eng.update_with_code(code),
-                    _ => ()
-                }
-            },
-            _ => ()
-        }
+        self.engine.update_with_code(code);
     }
 
     fn update(&mut self) -> bool {
-        match Arc::get_mut(&mut self.engine) {
-            Some(eng_mtx) => {
-                match eng_mtx.get_mut() {
-                    Ok(eng) => {
-                        let (bufs, _mystery_data) = eng.next_block(vec![]);
-                        if bufs[0].is_empty() || bufs[1].is_empty() {
-                            false
-                        } else {
-                            self.data_l = VecDeque::from(bufs[0].to_vec());
-                            self.data_r = VecDeque::from(bufs[1].to_vec());
-                            true
-                        }
-                    },
-                    _ => false
-                }
-            },
-            _ => false
+        let (bufs, _mystery_data) = self.engine.next_block(vec![]);
+        if bufs[0].is_empty() || bufs[1].is_empty() {
+            false
+        } else {
+            self.data_l = VecDeque::from(bufs[0].to_vec());
+            self.data_r = VecDeque::from(bufs[1].to_vec());
+            true
         }
+    }
+
+    pub fn play(&mut self, handle: OutputStreamHandle) {
+        let _ = handle.play_raw(self);
     }
 }
 
