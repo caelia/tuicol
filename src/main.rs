@@ -19,8 +19,8 @@ use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender, Receiver};
 fn main() {
     // let cfg = Config::default();
 
-    let (data_req_tx, data_req_rx) = sync_channel(0);
-    let (data_rsp_tx, data_rsp_rx) = sync_channel(0);
+    let (data_req_tx, data_req_rx) = sync_channel(1);
+    let (data_rsp_tx, data_rsp_rx) = sync_channel(1);
     let (ctrl_req_tx, ctrl_req_rx) = channel();
     let (ctrl_rsp_tx, ctrl_rsp_rx) = channel();
         
@@ -38,6 +38,7 @@ fn main() {
     let (_stream, handle) = OutputStream::try_from_device(&device).unwrap();
 
     let _ = tx.send(CtrlReq::Process(r#"o: sin 220"#));
+    thread::sleep(Duration::from_millis(100));
     thread::spawn(move || {
         let _ = handle.play_raw(src);
     });

@@ -1,4 +1,8 @@
 #![allow(unused_imports)]
+#![allow(static_mut_refs)]
+
+// For counting the number of iterations of next()
+// static mut COUNTER: u32 = 0;
 
 use crate::common::{Channel, DataReq, DataRsp, CtrlReq, CtrlRsp};
 // use crate::config::Config;
@@ -42,6 +46,8 @@ impl GlicolWrapper {
         if bufs[0].is_empty() || bufs[1].is_empty() {
             None
         } else {
+            // println!("{:?}", bufs[0]);
+            // println!("{:?}", bufs[1]);
             Some((VecDeque::from(bufs[0].to_vec()),
                   VecDeque::from(bufs[1].to_vec())))
         }
@@ -111,6 +117,12 @@ impl Iterator for GlicolAudioSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
+        /*
+        unsafe {
+            COUNTER += 1;
+            println!("{}", COUNTER);
+        }
+        */
         let result = {
             let result_ = match self.channel {
                 Channel::L => self.data_l.pop_front(),
@@ -119,8 +131,10 @@ impl Iterator for GlicolAudioSource {
             match result_ {
                 Some(sample) => Some(sample),
                 None => {
+                    // println!("MOAR SAMPULZ PLZ!");
                     let _ = self.tx.send(DataReq::NextBlock);
                     let msg = self.rx.recv();
+                    // println!("{:?}", msg);
                     match msg {
                         Ok(rsp) => {
                             match rsp {
