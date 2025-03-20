@@ -46,8 +46,10 @@ fn main() {
     });
     thread::sleep(Duration::from_millis(1500));
 
+    /*
     let _ = tx.send(CtrlReq::Process(r#""#));
     thread::sleep(Duration::from_millis(1500));
+    */
     let _ = tx.send(CtrlReq::Process(r#"o: saw 220"#));
     thread::sleep(Duration::from_millis(1500));
 
