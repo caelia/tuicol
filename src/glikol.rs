@@ -11,19 +11,19 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, SyncSender, Receiver};
 // use std::cell::{RefCell, RefMut};
 
-pub struct GlicolWrapper {
+pub struct GlicolWrapper<'a> {
     engine: glicol::Engine<32>,
-    audio_rx: &Receiver<AudioReq>,
-    audio_tx: SyncSender<AudioRsp>,
-    ctrl_rx: Receiver<CtrlReq>,
-    ctrl_tx: Sender<CtrlRsp>,
+    audio_rx: &'a Receiver<AudioReq>,
+    audio_tx: &'a SyncSender<AudioRsp>,
+    ctrl_rx: &'a Receiver<CtrlReq>,
+    ctrl_tx: &'a Sender<CtrlRsp>,
 }
 
-impl GlicolWrapper {
-    pub fn new(config: &Config) -> Self {
+impl<'a> GlicolWrapper<'a> {
+    pub fn new<'b>(config: &'a Config) -> Self {
         GlicolWrapper {
             engine: Engine::<32>::new(),
-            audio_rx: &config.audio_req_rx,
+            audio_rx: config.audio_req_rx,
             audio_tx: config.audio_rsp_tx,
             ctrl_rx: config.ctrl_req_rx,
             ctrl_tx: config.ctrl_rsp_tx
@@ -86,16 +86,16 @@ impl GlicolWrapper {
     }
 }
 
-pub struct GlicolAudioSource {
+pub struct GlicolAudioSource<'a> {
     channel: Channel,
     data_l: VecDeque<f32>,
     data_r: VecDeque<f32>,
-    rx: Receiver<AudioRsp>,
-    tx: SyncSender<AudioReq>
+    rx: &'a Receiver<AudioRsp>,
+    tx: &'a SyncSender<AudioReq>
 }
 
-impl GlicolAudioSource {
-    pub fn new(config: Config) -> Self {
+impl<'a> GlicolAudioSource<'a> {
+    pub fn new<'b>(config: &'a Config) -> Self {
         GlicolAudioSource {
             channel: Channel::L,
             data_l: VecDeque::new(),
@@ -105,7 +105,7 @@ impl GlicolAudioSource {
         }
     }
 }
-impl Iterator for GlicolAudioSource {
+impl Iterator for GlicolAudioSource<'_> {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -147,7 +147,7 @@ impl Iterator for GlicolAudioSource {
     }
 }
 
-impl Source for GlicolAudioSource {
+impl Source for GlicolAudioSource<'_> {
     fn current_frame_len(&self) -> Option<usize> {
        let len = self.data_l.len() + self.data_r.len();     
        if len == 0 {
