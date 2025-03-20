@@ -19,7 +19,7 @@ pub enum DataReq {
 
 #[derive(Debug)]
 pub enum CtrlReq {
-    Process(&'static str),
+    Process(String),
     Stop,
     Pause,
     Resume

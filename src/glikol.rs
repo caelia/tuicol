@@ -40,8 +40,8 @@ impl GlicolWrapper {
         }
     }
 
-    fn eval(&mut self, code: &str) {
-        self.engine.update_with_code(code);
+    fn eval(&mut self, code: String) {
+        self.engine.update_with_code(code.as_str());
     }
 
     fn update(&mut self) -> Option<(VecDeque<f32>, VecDeque<f32>)> {
