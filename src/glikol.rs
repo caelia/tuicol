@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 
-use crate::common::{Channel, AudioReq, AudioRsp, CtrlReq, CtrlRsp};
-use crate::config::Config;
+use crate::common::{Channel, DataReq, DataRsp, CtrlReq, CtrlRsp};
+// use crate::config::Config;
 use glicol::Engine;
 use rodio::Source;
 use std::collections::VecDeque;
@@ -11,22 +11,25 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, SyncSender, Receiver};
 // use std::cell::{RefCell, RefMut};
 
-pub struct GlicolWrapper<'a> {
+pub struct GlicolWrapper {
     engine: glicol::Engine<32>,
-    audio_rx: &'a Receiver<AudioReq>,
-    audio_tx: &'a SyncSender<AudioRsp>,
-    ctrl_rx: &'a Receiver<CtrlReq>,
-    ctrl_tx: &'a Sender<CtrlRsp>,
+    data_rx: Receiver<DataReq>,
+    data_tx: SyncSender<DataRsp>,
+    ctrl_rx: Receiver<CtrlReq>,
+    ctrl_tx: Sender<CtrlRsp>,
 }
 
-impl<'a> GlicolWrapper<'a> {
-    pub fn new<'b>(config: &'a Config) -> Self {
+impl GlicolWrapper {
+    pub fn new(data_tx: SyncSender<DataRsp>,
+               data_rx: Receiver<DataReq>,
+               ctrl_tx: Sender<CtrlRsp>,
+               ctrl_rx: Receiver<CtrlReq> ) -> Self {
         GlicolWrapper {
             engine: Engine::<32>::new(),
-            audio_rx: config.audio_req_rx,
-            audio_tx: config.audio_rsp_tx,
-            ctrl_rx: config.ctrl_req_rx,
-            ctrl_tx: config.ctrl_rsp_tx
+            data_tx,
+            data_rx,
+            ctrl_tx,
+            ctrl_rx
         }
     }
 
@@ -52,7 +55,7 @@ impl<'a> GlicolWrapper<'a> {
                     match req {
                         CtrlReq::Process(code) => {
                             self.eval(code);
-                            let _ = self.audio_tx.send(AudioRsp::Ok);
+                            let _ = self.data_tx.send(DataRsp::Ok);
                         },
                         CtrlReq::Stop => {
                             let _ = self.ctrl_tx.send(CtrlRsp::Ok);
@@ -68,14 +71,14 @@ impl<'a> GlicolWrapper<'a> {
                     break;
                 }
             }
-            let audio_msg = self.audio_rx.recv();
-            match audio_msg {
+            let data_msg = self.data_rx.recv();
+            match data_msg {
                 Ok(req) => {
                     match req {
-                        AudioReq::NextBlock => {
+                        DataReq::NextBlock => {
                             match self.update() {
-                                Some(data) => { let _ = self.audio_tx.send(AudioRsp::Data(data)); },
-                                None => { let _ = self.audio_tx.send(AudioRsp::NoData); }
+                                Some(data) => { let _ = self.data_tx.send(DataRsp::Data(data)); },
+                                None => { let _ = self.data_tx.send(DataRsp::NoData); }
                             }
                         },
                     }
@@ -86,26 +89,26 @@ impl<'a> GlicolWrapper<'a> {
     }
 }
 
-pub struct GlicolAudioSource<'a> {
+pub struct GlicolAudioSource {
     channel: Channel,
     data_l: VecDeque<f32>,
     data_r: VecDeque<f32>,
-    rx: &'a Receiver<AudioRsp>,
-    tx: &'a SyncSender<AudioReq>
+    tx: SyncSender<DataReq>,
+    rx: Receiver<DataRsp>,
 }
 
-impl<'a> GlicolAudioSource<'a> {
-    pub fn new<'b>(config: &'a Config) -> Self {
+impl GlicolAudioSource {
+    pub fn new(tx: SyncSender<DataReq>, rx: Receiver<DataRsp>) -> Self {
         GlicolAudioSource {
             channel: Channel::L,
             data_l: VecDeque::new(),
             data_r: VecDeque::new(),
-            rx: config.audio_rsp_rx,
-            tx: config.audio_req_tx
+            tx,
+            rx,
         }
     }
 }
-impl Iterator for GlicolAudioSource<'_> {
+impl Iterator for GlicolAudioSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -117,16 +120,16 @@ impl Iterator for GlicolAudioSource<'_> {
             match result_ {
                 Some(sample) => Some(sample),
                 None => {
-                    let _ = self.tx.send(AudioReq::NextBlock);
+                    let _ = self.tx.send(DataReq::NextBlock);
                     let msg = self.rx.recv();
                     match msg {
                         Ok(rsp) => {
                             match rsp {
-                                AudioRsp::Data((left, right)) => {
+                                DataRsp::Data((left, right)) => {
                                     self.data_l = left;
                                     self.data_r = right;
                                 },
-                                AudioRsp::NoData => (),
+                                DataRsp::NoData => (),
                                 _ => ()
                             }
                         },
@@ -147,7 +150,7 @@ impl Iterator for GlicolAudioSource<'_> {
     }
 }
 
-impl Source for GlicolAudioSource<'_> {
+impl Source for GlicolAudioSource {
     fn current_frame_len(&self) -> Option<usize> {
        let len = self.data_l.len() + self.data_r.len();     
        if len == 0 {
