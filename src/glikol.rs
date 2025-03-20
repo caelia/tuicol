@@ -1,54 +1,32 @@
 #![allow(unused_imports)]
 
+use crate::common::{Channel, AudioReq, AudioRsp, CtrlReq, CtrlRsp};
+use crate::config::Config;
 use glicol::Engine;
 use rodio::Source;
 use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{SyncSender, Receiver};
+use std::sync::mpsc::{Sender, SyncSender, Receiver};
 // use std::cell::{RefCell, RefMut};
-
-#[derive(Clone)]
-enum Channel {
-    L,
-    R
-}
-
-pub enum State {
-    Stopped,
-    Paused,
-    Running
-}
-
-pub enum Req {
-    NextBlock,
-    Stop,
-    Start,
-    Pause,
-    Resume,
-    Process(&'static str)
-}
-
-pub enum Rsp {
-    Data((VecDeque<f32>, VecDeque<f32>)),
-    NoData,
-    Ok,
-    Error    
-}
 
 pub struct GlicolWrapper {
     engine: glicol::Engine<32>,
-    rx: Receiver<Req>,
-    tx: SyncSender<Rsp>,
+    audio_rx: &Receiver<AudioReq>,
+    audio_tx: SyncSender<AudioRsp>,
+    ctrl_rx: Receiver<CtrlReq>,
+    ctrl_tx: Sender<CtrlRsp>,
 }
 
 impl GlicolWrapper {
-    pub fn new(rx: Receiver<Req>, tx: SyncSender<Rsp>) -> Self {
+    pub fn new(config: &Config) -> Self {
         GlicolWrapper {
             engine: Engine::<32>::new(),
-            rx,
-            tx
+            audio_rx: &config.audio_req_rx,
+            audio_tx: config.audio_rsp_tx,
+            ctrl_rx: config.ctrl_req_rx,
+            ctrl_tx: config.ctrl_rsp_tx
         }
     }
 
@@ -68,33 +46,41 @@ impl GlicolWrapper {
 
     pub fn run(&mut self) {
         loop {
-            let msg = self.rx.recv();
-            match msg {
+            let ctrl_msg = self.ctrl_rx.try_recv();
+            match ctrl_msg {
                 Ok(req) => {
                     match req {
-                        Req::NextBlock => {
-                            match self.update() {
-                                Some(data) => { let _ = self.tx.send(Rsp::Data(data)); },
-                                None => { let _ = self.tx.send(Rsp::NoData); }
-                            }
-                        },
-                        Req::Process(code) => {
+                        CtrlReq::Process(code) => {
                             self.eval(code);
-                            let _ = self.tx.send(Rsp::Ok);
+                            let _ = self.audio_tx.send(AudioRsp::Ok);
                         },
-                        Req::Stop => {
-                            let _ = self.tx.send(Rsp::Ok);
+                        CtrlReq::Stop => {
+                            let _ = self.ctrl_tx.send(CtrlRsp::Ok);
                             break;
                         },
-                        Req::Start | Req::Pause | Req::Resume => {
-                            let _ = self.tx.send(Rsp::Ok);
+                        CtrlReq::Start | CtrlReq::Pause | CtrlReq::Resume => {
+                            let _ = self.ctrl_tx.send(CtrlRsp::Ok);
                         }
                     }
                 },
                 _ => {
-                    let _ = self.tx.send(Rsp::Error);
+                    let _ = self.ctrl_tx.send(CtrlRsp::Error);
                     break;
                 }
+            }
+            let audio_msg = self.audio_rx.recv();
+            match audio_msg {
+                Ok(req) => {
+                    match req {
+                        AudioReq::NextBlock => {
+                            match self.update() {
+                                Some(data) => { let _ = self.audio_tx.send(AudioRsp::Data(data)); },
+                                None => { let _ = self.audio_tx.send(AudioRsp::NoData); }
+                            }
+                        },
+                    }
+                },
+                _ => panic!("Error receiving audio request!")
             }
         }
     }
@@ -104,18 +90,18 @@ pub struct GlicolAudioSource {
     channel: Channel,
     data_l: VecDeque<f32>,
     data_r: VecDeque<f32>,
-    rx: Receiver<Rsp>,
-    tx: SyncSender<Req>
+    rx: Receiver<AudioRsp>,
+    tx: SyncSender<AudioReq>
 }
 
 impl GlicolAudioSource {
-    pub fn new(rx: Receiver<Rsp>, tx: SyncSender<Req>) -> Self {
+    pub fn new(config: Config) -> Self {
         GlicolAudioSource {
             channel: Channel::L,
             data_l: VecDeque::new(),
             data_r: VecDeque::new(),
-            rx,
-            tx
+            rx: config.audio_rsp_rx,
+            tx: config.audio_req_tx
         }
     }
 }
@@ -131,16 +117,16 @@ impl Iterator for GlicolAudioSource {
             match result_ {
                 Some(sample) => Some(sample),
                 None => {
-                    let _ = self.tx.send(Req::NextBlock);
+                    let _ = self.tx.send(AudioReq::NextBlock);
                     let msg = self.rx.recv();
                     match msg {
                         Ok(rsp) => {
                             match rsp {
-                                Rsp::Data((left, right)) => {
+                                AudioRsp::Data((left, right)) => {
                                     self.data_l = left;
                                     self.data_r = right;
                                 },
-                                Rsp::NoData => (),
+                                AudioRsp::NoData => (),
                                 _ => ()
                             }
                         },
