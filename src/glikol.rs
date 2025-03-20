@@ -68,7 +68,6 @@ impl GlicolWrapper {
                 },
                 _ => {
                     let _ = self.ctrl_tx.send(CtrlRsp::Error);
-                    break;
                 }
             }
             let data_msg = self.data_rx.recv();
